@@ -394,8 +394,8 @@ async def test_blanking_during_vsync(dut):
 
 @cocotb.test()
 async def test_active_region_has_color(dut):
-    """TEST 13: Active video region has colored pixels"""
-    dut._log.info("TEST 13: Active region color check")
+    """TEST 11: Active video region has colored pixels"""
+    dut._log.info("TEST 11: Active region color check")
 
     clock = Clock(dut.clk, CLK_PERIOD_NS, unit="ns")
     cocotb.start_soon(clock.start())
@@ -424,8 +424,8 @@ async def test_active_region_has_color(dut):
 
 @cocotb.test()
 async def test_color_values_valid(dut):
-    """TEST 14: Color values are valid (2-bit RGB, values 0-3)"""
-    dut._log.info("TEST 14: Color values validation")
+    """TEST 12: Color values are valid (2-bit RGB, values 0-3)"""
+    dut._log.info("TEST 12: Color values validation")
 
     clock = Clock(dut.clk, CLK_PERIOD_NS, unit="ns")
     cocotb.start_soon(clock.start())
@@ -453,8 +453,8 @@ async def test_color_values_valid(dut):
 
 @cocotb.test()
 async def test_animation(dut):
-    """TEST 15: Animation - colors change between frames"""
-    dut._log.info("TEST 15: Animation detection")
+    """TEST 13: Animation - colors change between frames"""
+    dut._log.info("TEST 13: Animation detection")
 
     clock = Clock(dut.clk, CLK_PERIOD_NS, unit="ns")
     cocotb.start_soon(clock.start())
@@ -507,8 +507,8 @@ async def test_animation(dut):
 
 @cocotb.test()
 async def test_reset_recovery(dut):
-    """TEST 16: Reset clears state and restarts correctly"""
-    dut._log.info("TEST 16: Reset recovery")
+    """TEST 14: Reset clears state and restarts correctly"""
+    dut._log.info("TEST 14: Reset recovery")
 
     clock = Clock(dut.clk, CLK_PERIOD_NS, unit="ns")
     cocotb.start_soon(clock.start())
@@ -541,8 +541,8 @@ async def test_reset_recovery(dut):
 
 @cocotb.test()
 async def test_consecutive_line_timing(dut):
-    """TEST 17: 50 consecutive lines have correct timing"""
-    dut._log.info("TEST 17: Consecutive line timing")
+    """TEST 15: 50 consecutive lines have correct timing"""
+    dut._log.info("TEST 15: Consecutive line timing")
 
     clock = Clock(dut.clk, CLK_PERIOD_NS, unit="ns")
     cocotb.start_soon(clock.start())
@@ -584,8 +584,8 @@ async def test_consecutive_line_timing(dut):
 
 @cocotb.test()
 async def test_speed_control(dut):
-    """TEST 18: Animation speed control (Normal, Fast, Slow, Pause)"""
-    dut._log.info("TEST 18: Speed control check")
+    """TEST 16: Animation speed control (Normal, Fast, Slow, Pause)"""
+    dut._log.info("TEST 16: Speed control check")
 
     clock = Clock(dut.clk, CLK_PERIOD_NS, unit="ns")
     cocotb.start_soon(clock.start())
@@ -626,8 +626,8 @@ async def test_speed_control(dut):
 
 @cocotb.test()
 async def test_palettes(dut):
-    """TEST 19: Color palette selection"""
-    dut._log.info("TEST 19: Palette selection check")
+    """TEST 17: Color palette selection"""
+    dut._log.info("TEST 17: Palette selection check")
 
     clock = Clock(dut.clk, CLK_PERIOD_NS, unit="ns")
     cocotb.start_soon(clock.start())
@@ -665,8 +665,8 @@ async def test_palettes(dut):
 
 @cocotb.test()
 async def test_scanline_toggle(dut):
-    """TEST 20: Scanline toggle control"""
-    dut._log.info("TEST 20: Scanline toggle check")
+    """TEST 18: Scanline toggle control"""
+    dut._log.info("TEST 18: Scanline toggle check")
 
     clock = Clock(dut.clk, CLK_PERIOD_NS, unit="ns")
     cocotb.start_soon(clock.start())
@@ -705,4 +705,151 @@ async def test_scanline_toggle(dut):
     # In Classic palette, odd lines are different when scanlines are ON
     # This check depends on the palette implementation
     dut._log.info("PASS: Scanline toggle logic verified")
+
+
+@cocotb.test()
+async def test_font_at_known_position(dut):
+    """TEST 19: Font engine renders text at known position after reset"""
+    dut._log.info("TEST 19: Font at known position")
+
+    clock = Clock(dut.clk, CLK_PERIOD_NS, unit="ns")
+    cocotb.start_soon(clock.start())
+
+    dut.ena.value = 1
+    dut.ui_in.value = 0
+    dut.uio_in.value = 0
+    dut.rst_n.value = 0
+    await ClockCycles(dut.clk, 20)
+    dut.rst_n.value = 1
+    await ClockCycles(dut.clk, 5)
+
+    # After reset: tx=100, ty=100. First char 'E' top-left is at pixel (100, 100).
+    # Navigate to line 100, pixel 100
+    await wait_active_start(dut)
+    # Skip to line 100 (from line 0)
+    await ClockCycles(dut.clk, H_TOTAL * 100)
+    # Skip to pixel 100 in the line
+    await ClockCycles(dut.clk, 100)
+
+    # Sample text pixel — should be non-black (text color)
+    text_pixel = get_rgb(dut)
+    dut._log.info(f"Text pixel at (100,100): {text_pixel}")
+    assert text_pixel != (0, 0, 0), \
+        f"Expected text color at (100,100), got black"
+
+    # Navigate to pixel 500 on a nearby line — should be background (no text)
+    await wait_hsync_fall(dut)
+    await ClockCycles(dut.clk, H_BACK + 500)
+    bg_pixel = get_rgb(dut)
+    dut._log.info(f"Background pixel at (~500, ~101): {bg_pixel}")
+
+    # Text color has B=3 (text_b = 2'b11), background in Classic has B<=2
+    assert text_pixel[2] == 3, \
+        f"Text pixel blue should be 3, got {text_pixel[2]}"
+    dut._log.info(f"PASS: Font rendered at correct position (text={text_pixel}, bg={bg_pixel})")
+
+
+@cocotb.test()
+async def test_pause_text_frozen(dut):
+    """TEST 20: Pause mode freezes text position across frames"""
+    dut._log.info("TEST 20: Pause text frozen")
+
+    clock = Clock(dut.clk, CLK_PERIOD_NS, unit="ns")
+    cocotb.start_soon(clock.start())
+
+    dut.ena.value = 1
+    dut.ui_in.value = 0b00000011  # Pause mode
+    dut.uio_in.value = 0
+    dut.rst_n.value = 0
+    await ClockCycles(dut.clk, 20)
+    dut.rst_n.value = 1
+    await ClockCycles(dut.clk, 5)
+
+    # Sample a pixel guaranteed to be inside text across 5 frames.
+    # After reset: tx=100, ty=100. First char 'E' at pixel (100, 100).
+    # At (100, 100): rx=0 → char_idx=0, lx=0, ly=0. left_bar (lx<4) = true,
+    # top_bar (ly==0) = true → pix=1 (text pixel). This is always on for 'E'.
+    samples = []
+    for i in range(5):
+        await wait_active_start(dut)
+        await ClockCycles(dut.clk, H_TOTAL * 100 + 100)
+        pixel = get_rgb(dut)
+        samples.append(pixel)
+        dut._log.info(f"Frame {i}: pixel at (100,100) = {pixel}")
+
+    # In pause mode, text doesn't move. Pixel (100,100) is always on the 'E' left_bar.
+    # Text color has B=3 (text_b = 2'b11) regardless of frame_cnt.
+    for i, s in enumerate(samples):
+        assert s[2] == 3, f"Frame {i}: expected text blue=3, got {s[2]} — pixel not on text"
+
+    dut._log.info(f"PASS: Text position frozen in pause mode across {len(samples)} frames")
+
+
+@cocotb.test()
+async def test_starfield_variation(dut):
+    """TEST 21: Starfield background produces varied pixel colors"""
+    dut._log.info("TEST 21: Starfield variation")
+
+    clock = Clock(dut.clk, CLK_PERIOD_NS, unit="ns")
+    cocotb.start_soon(clock.start())
+
+    dut.ena.value = 1
+    dut.ui_in.value = 0
+    dut.uio_in.value = 0
+    dut.rst_n.value = 0
+    await ClockCycles(dut.clk, 20)
+    dut.rst_n.value = 1
+    await ClockCycles(dut.clk, 5)
+
+    # Sample background pixels on line 300 (well below text area at ty=100..140)
+    await wait_active_start(dut)
+    await ClockCycles(dut.clk, H_TOTAL * 300)
+
+    colors = set()
+    for _ in range(200):
+        await RisingEdge(dut.clk)
+        pixel = get_rgb(dut)
+        colors.add(pixel)
+
+    assert len(colors) > 1, \
+        f"Starfield should produce varied colors, got only {colors}"
+    dut._log.info(f"PASS: Starfield produced {len(colors)} distinct colors in 200 pixels")
+
+
+@cocotb.test()
+async def test_output_packing_format(dut):
+    """TEST 22: Verify uo_out bit packing matches TinyVGA PMOD spec"""
+    dut._log.info("TEST 22: Output packing format")
+
+    clock = Clock(dut.clk, CLK_PERIOD_NS, unit="ns")
+    cocotb.start_soon(clock.start())
+
+    dut.ena.value = 1
+    dut.ui_in.value = 0
+    dut.uio_in.value = 0
+    dut.rst_n.value = 0
+    await ClockCycles(dut.clk, 20)
+    dut.rst_n.value = 1
+    await ClockCycles(dut.clk, 5)
+
+    # Wait for HSYNC active (low) period — during sync, RGB must be 0
+    await wait_hsync_fall(dut)
+    await ClockCycles(dut.clk, 5)
+
+    val = int(dut.uo_out.value)
+    hsync_bit = (val >> 7) & 1
+    vsync_bit = (val >> 3) & 1
+
+    # During HSYNC: bit 7 should be 0 (active low)
+    assert hsync_bit == 0, f"During HSYNC, bit 7 should be 0, got {hsync_bit}"
+
+    # RGB bits (0-2, 4-6) should all be 0 during blanking
+    rgb_bits = val & 0b01110111
+    assert rgb_bits == 0, f"RGB should be 0 during HSYNC, got uo_out=0b{val:08b}"
+
+    # Verify get_hsync/get_vsync helpers match the bit positions
+    assert get_hsync(dut) == hsync_bit, "get_hsync() doesn't match bit 7"
+    assert get_vsync(dut) == vsync_bit, "get_vsync() doesn't match bit 3"
+
+    dut._log.info(f"PASS: Output packing verified (uo_out=0b{val:08b}, hsync@7={hsync_bit}, vsync@3={vsync_bit})")
 
